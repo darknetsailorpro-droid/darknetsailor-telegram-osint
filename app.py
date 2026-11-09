@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
+import sqlite3
 import os
+import glob
 import time
 import csv
 
@@ -13,7 +15,7 @@ YOUTUBE_URL = "https://youtube.com/@darknetsailorpro-o1l?si=oj8Z9hyMhNzqZpqX"
 
 st.set_page_config(page_title="تسريبات تيليغرام - Darknetsailor", page_icon="🟢", layout="wide")
 
-# تصميم الأمن السيبراني (مصفوفة خضراء داكنة وخطوط واضحة)
+# تصميم الأمن السيبراني (لم يتم تغيير أي حرف)
 cyber_css = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&family=Share+Tech+Mono&display=swap');
@@ -65,7 +67,6 @@ cyber_css = """
     }
     .stTabs [aria-selected="true"] { background-color: #00ff41 !important; color: #050a05 !important; }
 
-    /* تصميم البطاقة الاستخباراتية */
     .intel-card {
         background-color: #071407;
         border: 1px solid #00ff41;
@@ -99,70 +100,134 @@ cyber_css = """
 """
 st.markdown(cyber_css, unsafe_allow_html=True)
 
-DB_FILE = 'telegram_db.csv'
+DATA_DIR = 'data'
+DB_FILE = 'telegram_leaks.db' # ملف دائم على القرص
+CUSTOM_FILE = os.path.join(DATA_DIR, 'custom_added.csv')
 COLUMNS = ['sys_id', 'first_name', 'last_name', 'phone', 'user_id', 'nickname', 'last_seen']
 
-# دالة القراءة الدقيقة (باستخدام csv بدلاً من pandas)
-def load_data():
-    if not os.path.exists(DB_FILE):
-        # بيانات تجريبية للتأكد من عمل الأداة
-        data = [
-            ['1', 'محمد', 'العربي', '222222', '11111', 'taaay', ''],
-            ['2', 'Ali', '', '5555', '22222', 'Ali_Nick', '']
-        ]
-        df = pd.DataFrame(data, columns=COLUMNS)
-        df.to_csv(DB_FILE, sep='|', index=False, header=False)
-        return df
+# ==========================================
+# 1. محرك البيانات الدائم (SQLite File)
+# ==========================================
+@st.cache_resource
+def get_db_connection():
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-    data = []
-    try:
-        # محاولة القراءة بجميع الترميزات الممكنة
-        encodings = ['utf-8-sig', 'utf-8', 'cp1251', 'latin1']
-        for enc in encodings:
-            try:
-                with open(DB_FILE, 'r', encoding=enc) as f:
-                    sample = f.read(1024)
-                    delimiter = '|' if '|' in sample else ','
-                    f.seek(0)
-                    reader = csv.reader(f, delimiter=delimiter)
-                    for row in reader:
-                        # ضبط عدد الأعمدة ليكون 7 بالضبط
-                        row = row[:7] + [''] * (7 - len(row))
-                        data.append(row)
-                break # إذا نجح الترميز نخرج من الحلقة
-            except UnicodeDecodeError:
-                continue
-    except Exception as e:
-        st.error(f"خطأ في قراءة الملف: {e}")
-        return pd.DataFrame(columns=COLUMNS)
-
-    df = pd.DataFrame(data, columns=COLUMNS)
+def init_database():
+    conn = get_db_connection()
+    cursor = conn.cursor()
     
-    # حذف السطر الأول إذا كان يحتوي على العناوين
-    if len(df) > 0:
-        first_row_str = str(df.iloc[0].values)
-        if 'Ñèñòåìíûé' in first_row_str or 'sys_id' in first_row_str.lower():
-            df = df.iloc[1:]
-            
-    df = df.fillna('')
-    for col in df.columns:
-        df[col] = df[col].astype(str).str.strip()
+    # تسريع عملية الإنشاء والكتابة
+    cursor.execute("PRAGMA synchronous = OFF")
+    cursor.execute("PRAGMA journal_mode = MEMORY")
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS leaks (
+            sys_id TEXT, first_name TEXT, last_name TEXT, phone TEXT, 
+            user_id TEXT, nickname TEXT, last_seen TEXT
+        )
+    """)
+    
+    # التحقق إذا كانت قاعدة البيانات جاهزة (تحتوي على بيانات)
+    cursor.execute("SELECT COUNT(*) FROM leaks")
+    if cursor.fetchone()[0] > 0:
+        return conn
+
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
         
+    files = glob.glob(os.path.join(DATA_DIR, 'Telegram_27_*.csv'))
+    if os.path.exists(CUSTOM_FILE):
+        files.append(CUSTOM_FILE)
+
+    if not files:
+        return conn
+
+    st.info("⏳ جاري تحميل البيانات لأول مرة وبناء الفهارس (سيستغرق ثواني معدودة)...")
+    
+    # بدء معاملة واحدة سريعة جداً
+    cursor.execute("BEGIN TRANSACTION")
+    
+    for file in files:
+        try:
+            file_data = []
+            for enc in ['utf-8-sig', 'utf-8', 'cp1251', 'latin1']:
+                try:
+                    with open(file, 'r', encoding=enc) as f:
+                        sample = f.read(1024)
+                        delimiter = '|' if '|' in sample else ','
+                        f.seek(0)
+                        reader = csv.reader(f, delimiter=delimiter)
+                        for row in reader:
+                            row = row[:7] + [''] * (7 - len(row))
+                            file_data.append(tuple(row))
+                    break
+                except UnicodeDecodeError:
+                    continue
+            
+            if file_data:
+                if 'Ñèñòåìíûé' in str(file_data[0]) or 'sys_id' in str(file_data[0]).lower():
+                    file_data = file_data[1:]
+                
+                if file_data:
+                    cursor.executemany("INSERT INTO leaks VALUES (?, ?, ?, ?, ?, ?, ?)", file_data)
+        except Exception as e:
+            st.error(f"خطأ في قراءة الملف {file}: {e}")
+            
+    # إنشاء فهارس (Indexes) لتسريع البحث والتصفح للغاية
+    st.info("⚡ جاري إنشاء فهارس البحث...")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_first ON leaks(first_name)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_last ON leaks(last_name)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_phone ON leaks(phone)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_user ON leaks(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_nick ON leaks(nickname)")
+    
+    conn.commit()
+    return conn
+
+conn = init_database()
+
+# ==========================================
+# 2. دوال البحث والعد (Cache)
+# ==========================================
+@st.cache_data(ttl=3600)
+def get_total_count():
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM leaks")
+    return cursor.fetchone()[0]
+
+@st.cache_data(ttl=3600)
+def search_records(query):
+    q = f"%{query.strip()}%"
+    sql = """
+        SELECT * FROM leaks 
+        WHERE first_name LIKE ? 
+           OR last_name LIKE ? 
+           OR phone LIKE ? 
+           OR user_id LIKE ? 
+           OR nickname LIKE ?
+    """
+    df = pd.read_sql_query(sql, conn, params=(q, q, q, q, q))
     return df
 
-def save_data(df):
-    # الحفظ بفاصل | وبدون عناوين للحفاظ على نفس شكل الملف الأصلي
-    df.to_csv(DB_FILE, sep='|', index=False, header=False, encoding='utf-8-sig')
+@st.cache_data(ttl=3600)
+def get_paginated_records(offset, limit):
+    sql = f"SELECT * FROM leaks LIMIT {limit} OFFSET {offset}"
+    df = pd.read_sql_query(sql, conn)
+    return df
 
-# دالة رسم البطاقة
+# ==========================================
+# 3. دالة رسم البطاقة
+# ==========================================
 def render_card(row, show_download=True):
     def get_val(key):
-        val = str(row.get(key, '')).strip()
+        val = str(row[key]).strip() if row[key] else ''
         return val if val else '<span class="empty-data">---</span>'
     
-    first = str(row.get('first_name', '')).strip()
-    last = str(row.get('last_name', '')).strip()
-    nick = str(row.get('nickname', '')).strip()
+    first = str(row['first_name']).strip() if row['first_name'] else ''
+    last = str(row['last_name']).strip() if row['last_name'] else ''
+    nick = str(row['nickname']).strip() if row['nickname'] else ''
     
     name = f"{first} {last}".strip()
     if not name:
@@ -184,21 +249,19 @@ def render_card(row, show_download=True):
     st.markdown(card_html, unsafe_allow_html=True)
     
     if show_download:
-        single_record_df = pd.DataFrame([row])
+        single_record_df = pd.DataFrame([dict(row)])
         csv_data = single_record_df.to_csv(index=False).encode('utf-8-sig')
         st.download_button(
             label=f"📥 تحميل بيانات هذا الحساب (فقط)",
             data=csv_data,
-            file_name=f"leak_{row.get('user_id', 'unknown')}.csv",
+            file_name=f"leak_{row['user_id'] if row['user_id'] else 'unknown'}.csv",
             mime="text/csv",
-            key=f"dl_{row.get('user_id')}_{time.time()}"
+            key=f"dl_{row['user_id']}_{time.time()}"
         )
     st.markdown("<br>", unsafe_allow_html=True)
 
-df = load_data()
-
 # ==========================================
-# الواجهة الرئيسية
+# 4. الواجهة الرئيسية
 # ==========================================
 st.markdown("""
     <div style='text-align: center; padding: 20px 0;'>
@@ -226,11 +289,7 @@ with tab_search:
     
     if query:
         with st.spinner('جاري فحص السجلات...'):
-            time.sleep(0.3)
-            search_term = query.strip().lower()
-            df_str = df.astype(str).apply(lambda x: x.str.lower())
-            mask = df_str.apply(lambda row: row.str.contains(search_term, regex=False).any(), axis=1)
-            results = df[mask]
+            results = search_records(query)
             
         if not results.empty:
             st.success(f"✅ تم العثور على {len(results)} نتيجة.")
@@ -243,7 +302,7 @@ with tab_search:
 # 2. تبويب تصفح التسريبات
 # ==========================================
 with tab_all:
-    total_count = len(df)
+    total_count = get_total_count()
     st.markdown(f"<h3 style='text-align: center;'>إجمالي السجلات: <span style='color:#00ff41;'>{total_count:,}</span></h3>", unsafe_allow_html=True)
     st.info("💡 تصفح السجلات ببطاقات أنيقة. التحميل متاح فقط عند البحث.")
     
@@ -255,15 +314,13 @@ with tab_all:
         with col2:
             page_num = st.number_input("الصفحة", min_value=1, max_value=total_pages, value=1, step=1)
         
-        start_idx = (page_num - 1) * records_per_page
-        end_idx = start_idx + records_per_page
-        
-        page_df = df.iloc[start_idx:end_idx]
+        offset = (page_num - 1) * records_per_page
+        page_df = get_paginated_records(offset, records_per_page)
         
         for _, row in page_df.iterrows():
             render_card(row, show_download=False)
     else:
-        st.warning("⚠️ قاعدة البيانات فارغة.")
+        st.warning("⚠️ قاعدة البيانات فارغة. تأكد من وجود ملفات CSV في مجلد data.")
 
 # ==========================================
 # 3. تبويب إضافة تسريب جديد
@@ -287,18 +344,26 @@ with tab_add:
             if not new_first and not new_nick and not new_phone:
                 st.warning("⚠️ يجب إدخال معلومة واحدة على الأقل.")
             else:
-                if new_user_id and str(new_user_id) in df['user_id'].values:
-                    st.error("❌ هذا الـ User_ID موجود مسبقاً!")
-                else:
-                    new_row = pd.DataFrame([{
-                        'sys_id': new_sys_id, 'first_name': new_first, 'last_name': new_last,
-                        'phone': new_phone, 'user_id': new_user_id, 'nickname': new_nick, 'last_seen': ""
-                    }])
-                    df = pd.concat([df, new_row], ignore_index=True)
-                    save_data(df)
-                    st.success("✅ تم إضافة البيانات بنجاح!")
-                    time.sleep(1)
-                    st.rerun()
+                if new_user_id:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT 1 FROM leaks WHERE user_id = ? LIMIT 1", (new_user_id,))
+                    if cursor.fetchone():
+                        st.error("❌ هذا الـ User_ID موجود مسبقاً!")
+                        st.stop()
+                
+                new_data = (new_sys_id, new_first, new_last, new_phone, new_user_id, new_nick, "")
+                cursor = conn.cursor()
+                cursor.execute("INSERT INTO leaks VALUES (?, ?, ?, ?, ?, ?, ?)", new_data)
+                conn.commit()
+                
+                with open(CUSTOM_FILE, 'a', newline='', encoding='utf-8-sig') as f:
+                    writer = csv.writer(f, delimiter='|')
+                    writer.writerow(new_data)
+                
+                st.cache_data.clear()
+                st.success("✅ تم إضافة البيانات بنجاح!")
+                time.sleep(1)
+                st.rerun()
 
 # ==========================================
 # الروابط السفلية

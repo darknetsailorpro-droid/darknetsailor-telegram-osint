@@ -1,0 +1,44 @@
+    st.subheader("إضافة تسريب جديد إلى قاعدة البيانات")
+    with st.form("add_leak_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            new_first = st.text_input("الاسم الأول")
+            new_last = st.text_input("اللقب")
+            new_phone = st.text_input("رقم الهاتف")
+        with col2:
+            new_user_id = st.text_input("معرف المستخدم (User_ID)")
+            new_nick = st.text_input("المعرف (Nickname) بدون @")
+            new_sys_id = st.text_input("الرقم النظامي (اختياري)")
+            
+        submit_add = st.form_submit_button("➕ إضافة إلى قاعدة البيانات")
+        
+        if submit_add:
+            if not new_first and not new_nick and not new_phone:
+                st.warning("⚠️ يجب إدخال معلومة واحدة على الأقل.")
+            else:
+                if new_user_id and str(new_user_id) in df['user_id'].values:
+                    st.error("❌ هذا الـ User_ID موجود مسبقاً!")
+                else:
+                    new_row = pd.DataFrame([{
+                        'sys_id': new_sys_id, 'first_name': new_first, 'last_name': new_last,
+                        'phone': new_phone, 'user_id': new_user_id, 'nickname': new_nick, 'last_seen': ""
+                    }])
+                    df = pd.concat([df, new_row], ignore_index=True)
+                    save_data(df)
+                    st.success("✅ تم إضافة البيانات بنجاح!")
+                    time.sleep(1)
+                    st.rerun()
+
+# ==========================================
+# الروابط السفلية
+# ==========================================
+st.markdown(f"""
+    <div class="social-links">
+        <p style='color: #e0e0e0; margin-bottom: 15px;'>تابعنا على منصاتنا الرسمية:</p>
+        <a href="{TIKTOK_URL}" target="_blank">🎵 تيك توك</a>
+        <a href="{YOUTUBE_URL}" target="_blank">▶️ يوتيوب</a>
+    </div>
+    <p style='text-align:center; color:#004411; margin-top: 20px; font-family: monospace;'>
+        System Secured & Powered by Darknetsailor 🛡️
+    </p>
+""", unsafe_allow_html=True)

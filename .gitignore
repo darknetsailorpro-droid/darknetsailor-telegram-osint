@@ -7,3 +7,7 @@ telegram_db.txt
 telegram_leaks.db
 
 .env
+venv/
+__pycache__/
+telegram_leaks.db
+*.log
