@@ -52,7 +52,7 @@
 
 ## 📄 النتائج
 
-![Results](images/add-record.png)
+![Results](images/Results.png)
 
 ---
 
