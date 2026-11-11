@@ -90,12 +90,13 @@ pip install -r requirements.txt
 
 ---
 
-# ▶️ تشغيل الأداة + upgrade bootlenck
+# ▶️ تشغيل الأداة + upgrade bottleneck
 
 ```bash
 streamlit run app.py
 
-pip install --upgrde bootlenck
+pip install --upgrade bottleneck
+
 ```
 بعد تشغيل الأداة افتح المتصفح على 
 
