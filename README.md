@@ -90,17 +90,14 @@ pip install -r requirements.txt
 
 ---
 
-# ▶️ تشغيل الأداة
+# ▶️ تشغيل الأداة + upgrade bootlenck
 
 ```bash
 streamlit run app.py
-```
-
-
-upgrade bootlenck
 
 pip install --upgrde bootlenck
-بعد تشغيل الأداة افتح المتصفح علىg
+```
+بعد تشغيل الأداة افتح المتصفح على 
 
 ```
 http://localhost:8501
